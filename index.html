@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Advanced Habit Tracker</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            font-family: Arial;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        
+        h2 {
+            text-align: center;
+        }
+        
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            background: white;
+            font-size: 12px;
+            margin-bottom: 30px;
+        }
+        
+        th,
+        td {
+            border: 1px solid #ccc;
+            text-align: center;
+            padding: 4px;
+        }
+        
+        th {
+            background: #eee;
+        }
+        
+        .habit-name {
+            text-align: left;
+            font-weight: bold;
+        }
+        
+        td.clickable {
+            cursor: pointer;
+        }
+        
+        td.completed {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        .chart-container {
+            background: white;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h2>📅 Monthly Habit Tracker</h2>
+
+    <label>Select Month:
+<input type="month" id="monthPicker">
+</label>
+
+    <br><br>
+
+    <table id="habitTable">
+        <thead>
+            <tr>
+                <th>Habit / Days</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <div class="chart-container">
+        <h3>📈 Daily Completion Trend</h3>
+        <canvas id="areaChart"></canvas>
+    </div>
+
+    <div class="chart-container">
+        <h3>📊 Weekly Progress</h3>
+        <canvas id="barChart"></canvas>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+
+            const habits = [
+                "Wake up 4:30", "Gym", "Cold Bath", "College",
+                "2hr Library", "Water 3L", "1hr Sleep"
+            ];
+
+            const monthPicker = document.getElementById("monthPicker");
+            const table = document.getElementById("habitTable");
+            const tbody = table.querySelector("tbody");
+
+            monthPicker.value = new Date().toISOString().slice(0, 7);
+
+            let areaChart, barChart;
+
+            function getDaysInMonth(year, month) {
+                return new Date(year, month, 0).getDate();
+            }
+
+            function getKey() {
+                return "habitData_" + monthPicker.value;
+            }
+
+            function buildTable() {
+
+                const [year, month] = monthPicker.value.split("-");
+                const days = getDaysInMonth(year, month);
+
+                const headerRow = table.querySelector("thead tr");
+                headerRow.innerHTML = "<th>Habit / Days</th>";
+
+                for (let d = 1; d <= days; d++) {
+                    headerRow.innerHTML += `<th>${d}</th>`;
+                }
+
+                tbody.innerHTML = "";
+
+                habits.forEach((habit, i) => {
+                    let row = `<tr><td class="habit-name">${habit}</td>`;
+                    for (let d = 1; d <= days; d++) {
+                        row += `<td class="clickable" data-habit="${i}" data-day="${d}"></td>`;
+                    }
+                    row += "</tr>";
+                    tbody.innerHTML += row;
+                });
+
+                loadData();
+            }
+
+            function loadData() {
+                const saved = JSON.parse(localStorage.getItem(getKey())) || {};
+
+                document.querySelectorAll(".clickable").forEach(cell => {
+                    const h = cell.dataset.habit;
+                    const d = cell.dataset.day;
+
+                    if (saved[h] && saved[h][d]) {
+                        cell.classList.add("completed");
+                        cell.innerText = "✓";
+                    }
+                });
+
+                updateCharts();
+            }
+
+            function saveData() {
+                let data = {};
+
+                document.querySelectorAll(".clickable").forEach(cell => {
+                    const h = cell.dataset.habit;
+                    const d = cell.dataset.day;
+
+                    if (cell.classList.contains("completed")) {
+                        if (!data[h]) data[h] = {};
+                        data[h][d] = true;
+                    }
+                });
+
+                localStorage.setItem(getKey(), JSON.stringify(data));
+            }
+
+            document.addEventListener("click", function(e) {
+                if (e.target.classList.contains("clickable")) {
+                    e.target.classList.toggle("completed");
+                    e.target.innerText = e.target.classList.contains("completed") ? "✓" : "";
+                    saveData();
+                    updateCharts();
+                }
+            });
+
+            function updateCharts() {
+
+                const [year, month] = monthPicker.value.split("-");
+                const days = getDaysInMonth(year, month);
+
+                const saved = JSON.parse(localStorage.getItem(getKey())) || {};
+                let dailyCount = Array(days).fill(0);
+
+                for (let h in saved) {
+                    for (let d in saved[h]) {
+                        dailyCount[d - 1]++;
+                    }
+                }
+
+                const maxHabits = habits.length;
+                const dailyPercent = dailyCount.map(c => (c / maxHabits) * 100);
+
+                // Area Chart
+                const ctx1 = document.getElementById("areaChart").getContext("2d");
+                if (areaChart) areaChart.destroy();
+
+                areaChart = new Chart(ctx1, {
+                    type: 'line',
+                    data: {
+                        labels: [...Array(days).keys()].map(x => x + 1),
+                        datasets: [{
+                            label: 'Daily Completion %',
+                            data: dailyPercent,
+                            fill: true,
+                            tension: 0.3
+                        }]
+                    }
+                });
+
+                // Weekly Chart
+                let weeks = Math.ceil(days / 7);
+                let weekly = Array(weeks).fill(0);
+
+                dailyCount.forEach((val, i) => {
+                    weekly[Math.floor(i / 7)] += val;
+                });
+
+                const ctx2 = document.getElementById("barChart").getContext("2d");
+                if (barChart) barChart.destroy();
+
+                barChart = new Chart(ctx2, {
+                    type: 'bar',
+                    data: {
+                        labels: weekly.map((_, i) => `Week ${i+1}`),
+                        datasets: [{
+                            label: 'Total Habits Completed',
+                            data: weekly
+                        }]
+                    }
+                });
+            }
+
+            monthPicker.addEventListener("change", buildTable);
+
+            buildTable();
+
+        });
+    </script>
+
+</body>
+
+</html>
